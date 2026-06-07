@@ -490,7 +490,7 @@ with st.sidebar:
     else:
         source_val = st.text_input("Server File Path", placeholder="C:/meetings/finance_sync.mp4")
 
-    language = st.selectbox("Speech Transcription Language", ["english", "hinglish"], index=0)
+    language = "english"
     
     st.markdown("<div style='margin-top:1.5rem'></div>", unsafe_allow_html=True)
     run_btn = st.button("⚡ Analyse Meeting", use_container_width=True)
