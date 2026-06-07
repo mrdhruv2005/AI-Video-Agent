@@ -24,14 +24,23 @@ def extract_video_id(url: str) -> str:
 
 def get_secret(key: str, default: str = None) -> str:
     """Retrieve secret from Streamlit secrets (Cloud) or environment variables (Local)."""
-    if hasattr(st, "secrets") and key in st.secrets:
-        return st.secrets[key]
+    try:
+        if hasattr(st, "secrets") and key in st.secrets:
+            return st.secrets[key]
+    except Exception:
+        # st.secrets raises an exception if accessed outside streamlit when secrets.toml doesn't exist
+        pass
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
     return os.getenv(key, default)
 
 def download_via_rapidapi(url: str) -> str:
     """
     Downloads audio using the configured RapidAPI YouTube-to-MP3 API.
-    Scans various endpoints and parses JSON responses dynamically to support multiple API formats.
+    Bypasses YouTube IP block using get_mp3_download_link and polls until the conversion is complete.
     """
     api_key = get_secret("RAPIDAPI_KEY")
     api_host = get_secret("RAPIDAPI_HOST")
@@ -41,93 +50,68 @@ def download_via_rapidapi(url: str) -> str:
         
     print(f"Bypassing YouTube IP block via RapidAPI Host: {api_host}")
     
+    video_id = extract_video_id(url)
+    if not video_id:
+        raise Exception(f"Could not extract video ID from URL: {url}")
+        
     headers = {
         "x-rapidapi-key": api_key,
         "x-rapidapi-host": api_host,
         "Accept": "application/json"
     }
     
-    video_id = extract_video_id(url)
+    endpoint_url = f"https://{api_host}/get_mp3_download_link/{video_id}"
+    print(f"Calling RapidAPI endpoint: {endpoint_url}")
     
-    # Try common endpoint layouts in popular RapidAPI downloaders
-    endpoints = [
-        (f"https://{api_host}/", {"url": url}),
-        (f"https://{api_host}/get", {"url": url}),
-        (f"https://{api_host}/download", {"url": url}),
-        (f"https://{api_host}/dl", {"url": url}),
-        (f"https://{api_host}/", {"id": video_id}),
-        (f"https://{api_host}/get", {"id": video_id}),
-        (f"https://{api_host}/download", {"id": video_id}),
-    ]
+    response = requests.get(endpoint_url, headers=headers, params={"response_mode": "default"}, timeout=15)
+    if response.status_code != 200:
+        raise Exception(f"RapidAPI request failed with status code {response.status_code}: {response.text}")
+        
+    data = response.json()
+    download_link = data.get("file") or data.get("reserved_file")
+    if not download_link:
+        raise Exception(f"Could not find download file URL in RapidAPI response: {data}")
+        
+    print(f"Direct URL retrieved: {download_link}")
+    print("Waiting for the audio file to be converted and ready on the API server...")
     
-    response_json = None
-    last_error = None
+    # Poll the download URL using HEAD requests until status code is 200 (not 404)
+    # The API mentions file will be ready in 20 to 300 seconds.
+    max_retries = 60  # 60 * 5s = 300 seconds (5 minutes) max wait
+    success = False
     
-    for endpoint_url, params in endpoints:
+    for i in range(max_retries):
+        time.sleep(5)
         try:
-            print(f"Trying RapidAPI endpoint: {endpoint_url} with params {params}")
-            r = requests.get(endpoint_url, headers=headers, params=params, timeout=15)
-            if r.status_code == 200:
-                response_json = r.json()
-                print(f"Success from {endpoint_url}. Response: {response_json}")
+            # Send HEAD request to avoid downloading payload during checks
+            check = requests.head(download_link, timeout=10)
+            if check.status_code == 200:
+                print(f"Audio file is ready! (Polled {i+1} times)")
+                success = True
                 break
             else:
-                last_error = f"Status {r.status_code}: {r.text[:150]}"
+                print(f"File not ready yet (Status: {check.status_code}). Retrying in 5s...")
         except Exception as e:
-            last_error = str(e)
+            print(f"Polling error: {e}. Retrying in 5s...")
             
-    if not response_json:
-        raise Exception(f"Failed to query RapidAPI endpoints. Last error: {last_error}")
-        
-    # Standard JSON keys that return the direct download URL
-    download_link = None
-    keys_to_check = ["link", "downloadUrl", "download_url", "url", "download", "mp3", "audio"]
-    
-    # Check top-level keys
-    for key in keys_to_check:
-        if key in response_json and isinstance(response_json[key], str) and response_json[key].startswith("http"):
-            download_link = response_json[key]
-            break
+    if not success:
+        # Fallback to reserved file if main file link failed
+        reserved_link = data.get("reserved_file")
+        if reserved_link and reserved_link != download_link:
+            print(f"Primary file link timed out. Checking reserved link: {reserved_link}")
+            download_link = reserved_link
+            try:
+                check = requests.head(download_link, timeout=10)
+                if check.status_code == 200:
+                    success = True
+            except Exception as e:
+                print(f"Reserved file polling error: {e}")
+                
+        if not success:
+            raise Exception("Timed out waiting for RapidAPI to generate and host the audio file.")
             
-    # Check nested keys (e.g. {"result": {"link": "..."}})
-    if not download_link:
-        for parent_key in ["result", "data", "info", "output"]:
-            if parent_key in response_json and isinstance(response_json[parent_key], dict):
-                sub_dict = response_json[parent_key]
-                for key in keys_to_check:
-                    if key in sub_dict and isinstance(sub_dict[key], str) and sub_dict[key].startswith("http"):
-                        download_link = sub_dict[key]
-                        break
-                if download_link:
-                    break
-                    
-    # Check if we need to poll for background processing (some APIs do this)
-    if not download_link and response_json.get("status") == "processing":
-        job_id = response_json.get("job_id") or response_json.get("id")
-        if job_id:
-            print(f"Job processing (ID: {job_id}). Polling status...")
-            for _ in range(6):
-                time.sleep(3)
-                poll_url = f"https://{api_host}/status"
-                try:
-                    r = requests.get(poll_url, headers=headers, params={"id": job_id}, timeout=10)
-                    if r.status_code == 200:
-                        poll_json = r.json()
-                        for key in keys_to_check:
-                            if key in poll_json and isinstance(poll_json[key], str) and poll_json[key].startswith("http"):
-                                download_link = poll_json[key]
-                                break
-                        if download_link:
-                            break
-                except Exception as e:
-                    print(f"Polling error: {e}")
-                    
-    if not download_link:
-        raise Exception(f"Unable to parse direct download URL from RapidAPI response: {response_json}")
-        
-    print(f"Bypassed URL successfully. Downloading MP3 stream from: {download_link}")
+    print(f"Downloading MP3 stream from direct CDN: {download_link}")
     
-    # Download the MP3 file from the direct CDN link
     file_response = requests.get(download_link, stream=True, timeout=90)
     if file_response.status_code != 200:
         raise Exception(f"Failed to fetch MP3 stream, status: {file_response.status_code}")
