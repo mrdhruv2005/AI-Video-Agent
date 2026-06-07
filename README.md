@@ -17,29 +17,35 @@ graph TD
     classDef model fill:#111827,stroke:#06b6d4,stroke-width:2px,color:#fff;
     classDef out fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#fff;
 
-    A[Input: YT URL / Upload / Local File] :::input --> B(Audio Processor: yt-dlp & pydub) :::proc
-    B --> C[Audio Chunks ~10 mins] :::proc
-    C --> D(Groq API: Whisper-Large-V3) :::model
-    D --> E[Full English Transcript] :::proc
+    A[Input: YT URL / Upload / Local File] --> B(Audio Processor: yt-dlp & pydub)
+    B --> C[Audio Chunks ~10 mins]
+    C --> D(Groq API: Whisper-Large-V3)
+    D --> E[Full English Transcript]
     
     %% RAG Fork
-    E --> F[Chroma Vector Store] :::model
-    E --> G(Mistral AI: mistral-small-latest) :::model
+    E --> F[Chroma Vector Store]
+    E --> G(Mistral AI: mistral-small-latest)
     
     %% Embeddings
-    H[HuggingFace: all-MiniLM-L6-v2 Embeddings] :::model --> F
+    H[HuggingFace: all-MiniLM-L6-v2 Embeddings] --> F
     
     %% Summaries Fork
-    G --> I[Executive Summary] :::out
-    G --> J[Action Items & Owners] :::out
-    G --> K[Key Decisions & Questions] :::out
+    G --> I[Executive Summary]
+    G --> J[Action Items & Owners]
+    G --> K[Key Decisions & Questions]
     
     %% Q&A Fork
-    F --> L(RAG Engine: LangChain LCEL) :::proc
-    L --> M[Interactive Chat Assistant] :::out
+    F --> L(RAG Engine: LangChain LCEL)
+    L --> M[Interactive Chat Assistant]
     
     %% Exporters
-    I & J & K & E --> N(PDF / MD / JSON Exporters) :::proc
+    I & J & K & E --> N(PDF / MD / JSON Exporters)
+
+    %% Apply CSS classes to nodes
+    class A input;
+    class B,C,E,L,N proc;
+    class D,F,G,H model;
+    class I,J,K,M out;
 ```
 
 ### 2. Conversational RAG Sequence
