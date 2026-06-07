@@ -1,0 +1,29 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Python caching
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local Media downloads
+downloads/
+
+# Local databases & history
+vector_db/
+history/
+
+# Environments & Secret Keys (Crucial for security!)
+.env
+.env.local
+.env.*
+
+# Streamlit config (if temporary)
+.streamlit/config.toml
+
+# OS Files
+.DS_Store
+Thumbs.db
