@@ -396,12 +396,20 @@ h1, h2, h3, h4, h5, h6 {
 
 # ─── Helper Functions ───────────────────────────────────────────────────────────
 def clear_vector_db():
-    """Wipes the local Chroma DB directory to keep vector space clean for the current meeting."""
-    if os.path.exists("vector_db"):
-        try:
-            shutil.rmtree("vector_db", ignore_errors=True)
-        except Exception as e:
-            print(f"Warning: Could not wipe vector_db directory: {e}")
+    """Wipes the local Chroma DB collection programmatically to prevent readonly DB locks on Windows."""
+    try:
+        from core.vector_store import load_vector_store
+        db = load_vector_store()
+        db.delete_collection()
+        print("Chroma collection cleared successfully via delete_collection().")
+    except Exception as e:
+        print(f"Warning: Could not clear Chroma collection: {e}")
+        # Fallback to shutil.rmtree if the programmatic clear fails
+        if os.path.exists("vector_db"):
+            try:
+                shutil.rmtree("vector_db", ignore_errors=True)
+            except Exception as re:
+                print(f"Warning: Could not wipe vector_db directory: {re}")
 
 # ─── Session State Init ──────────────────────────────────────────────────────────
 for key, default in {
