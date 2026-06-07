@@ -7,7 +7,7 @@ DOWNLOAD_DIR = 'downloads'
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 def download_youtube_audio(url: str) -> str:
-    """Download YouTube video as an MP3 audio file."""
+    """Download YouTube video as an MP3 audio file with bot-bypass headers."""
     output_path = os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s")
     ydl_opts = {
         "format": "bestaudio/best",
@@ -15,15 +15,28 @@ def download_youtube_audio(url: str) -> str:
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",  # WAV ki jagah MP3
-                "preferredquality": "128", # Groq ke liye 128kbps perfect hai
+                "preferredcodec": "mp3",  # Convert output to MP3
+                "preferredquality": "128", # 128kbps is optimal for Whisper
             }
         ],
         "quiet": True,
+        # ── Bot-Bypass Options ──
+        "nocheckcertificate": True,       # Bypass SSL certification checks
+        "referer": "https://www.youtube.com/",
+        "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Sec-Fetch-Mode": "navigate",
+        },
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "ios", "web"] # Android client is more resistant to IP blocks
+            }
+        }
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
-        # yt-dlp file ko .mp3 mein extract karega
         filename = ydl.prepare_filename(info)
         filename = os.path.splitext(filename)[0] + ".mp3"
     return filename
